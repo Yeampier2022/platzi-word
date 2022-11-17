@@ -1,12 +1,10 @@
-/**
- * Finalizando algunos detalles del proyecto PlatziWordle.
- * En esta clase generamos el mecanismo que permite verificar la posición de las letras.
- * También insertar nuevas letras a través de las filas de PlatziWordle.
- */
+
 
  import { fromEvent, Subject } from "rxjs";
+ import { map, filter, takeUntil } from "rxjs/operators";
  import WORDS_LIST from "./wordsList.json";
  
+ const restartButton = document.getElementById("restart-button");
  const letterRows = document.getElementsByClassName("letter-row");
  const messageText = document.getElementById("message-text");
  const onKeyDown$ = fromEvent(document, "keydown");
@@ -20,81 +18,89 @@
  
  const userWinOrLoose$ = new Subject();
  
+ const insertLetter$ = onKeyDown$.pipe(
+   map((event) => event.key.toUpperCase()),
+   filter(
+     (pressedKey) =>
+       pressedKey.length === 1 && pressedKey.match(/[a-z]/i) && letterIndex < 5
+   )
+ );
+ 
  const insertLetter = {
-   next: (event) => {
-     const pressedKey = event.key.toUpperCase();
-     if (pressedKey.length === 1 && pressedKey.match(/[a-z]/i)) {
-       let letterBox =
-         Array.from(letterRows)[letterRowIndex].children[letterIndex];
-       letterBox.textContent = pressedKey;
-       letterBox.classList.add("filled-letter");
-       letterIndex++;
-       userAnswer.push(pressedKey);
-     }
+   next: (letter) => {
+     let letterBox =
+       Array.from(letterRows)[letterRowIndex].children[letterIndex];
+     letterBox.textContent = letter;
+     letterBox.classList.add("filled-letter");
+     letterIndex++;
+     userAnswer.push(letter);
    },
  };
+ 
+ const checkWord$ = onKeyDown$.pipe(
+   map((event) => event.key),
+   filter((key) => key === "Enter" && letterIndex === 5 && letterRowIndex <= 5)
+ );
  
  const checkWord = {
-   next: (event) => {
-     if (event.key === "Enter") {
-       if (userAnswer.length !== 5) {
-         messageText.textContent = "¡Te faltan algunas letras!";
-         return; // <- Este return nos permite parar la ejecución del observable
-       }
+   next: () => {
+     if (userAnswer.length !== 5) {
+       messageText.textContent = "¡Te faltan algunas letras!";
+       return;
+     }
  
-       // También podemos cambiar el ciclo for/forEach/while en lugar de `userAnswer.map()`
-       // 😊 Iteramos sobre las letras en índices `[0, 1, 2, 3, 4]`:
-       userAnswer.map((_, i) => {
-         let letterColor = "";
-         let letterBox = letterRows[letterRowIndex].children[i];
+     userAnswer.map((_, i) => {
+       let letterColor = "";
+       let letterBox = letterRows[letterRowIndex].children[i];
  
-         
-         let letterPosition = rightWord.indexOf(userAnswer[i]);
+       let letterPosition = rightWord.indexOf(userAnswer[i]);
  
-         if (rightWord[i] === userAnswer[i]) {
-           letterColor = "letter-green"; // Pintar de verde 🟩 si coincide letra[posición]
+       if (rightWord[i] === userAnswer[i]) {
+         letterColor = "letter-green";
+       } else {
+         if (letterPosition === -1) {
+           letterColor = "letter-grey";
          } else {
-           if (letterPosition === -1) {
-             letterColor = "letter-grey"; // Pintar de gris ⬜️ si no coincide letra o posición
-           } else {
-             letterColor = "letter-yellow"; // Pintar de amarillo 🟨 si coincide letra, pero no posición
-           }
+           letterColor = "letter-yellow";
          }
-         letterBox.classList.add(letterColor);
-       });
- 
-       if (userAnswer.length === 5) {
-         letterIndex = 0;
-         userAnswer = [];
-         letterRowIndex++;
        }
+       letterBox.classList.add(letterColor);
+     });
  
-       if (userAnswer.join("") === rightWord) {
+     
+ 
+     if (userAnswer.join("") === rightWord) {
+       messageText.textContent = `😊 ¡Sí! La palabra ${rightWord.toUpperCase()} es la correcta`;
+       userWinOrLoose$.next();
+       restartButton.disabled = false;
+     } else {
+       letterIndex = 0;
+       letterRowIndex++;
+       userAnswer = [];
+ 
+       if (letterRowIndex === 6) {
+         messageText.textContent = `😔 Perdiste. La palabra correcta era: "${rightWord.toUpperCase()}"`;
          userWinOrLoose$.next();
+         restartButton.disabled = false;
        }
      }
    },
  };
  
-
+ const removeLetter$ = onKeyDown$.pipe(
+   map((event) => event.key),
+   filter((key) => key === "Backspace" && letterIndex !== 0)
+ );
+ 
  const removeLetter = {
-   next: (event) => {
-     const pressedKey = event.key;
-     // Verificamos si es la tecla Backspace y que no estamos en la primera posición [0]
-     if (pressedKey === "Backspace" && letterIndex !== 0) {
-       let letterBox =
-         letterRows[letterRowIndex].children[userAnswer.length - 1];
-       letterBox.textContent = "";
-       letterBox.classList = "letter";
-       letterIndex--;
-       userAnswer.pop();
-     }
+   next: () => {
+     let letterBox = letterRows[letterRowIndex].children[userAnswer.length - 1];
+     letterBox.textContent = "";
+     letterBox.classList = "letter";
+     letterIndex--;
+     userAnswer.pop();
    },
  };
- 
- onKeyDown$.subscribe(insertLetter);
- onKeyDown$.subscribe(checkWord);
- onKeyDown$.subscribe(removeLetter);
  
  userWinOrLoose$.subscribe(() => {
    let letterRowsWinned = letterRows[letterRowIndex];
@@ -102,4 +108,9 @@
      letterRowsWinned.children[i].classList.add("letter-green");
    }
  });
+ 
+
+ insertLetter$.pipe(takeUntil(userWinOrLoose$)).subscribe(insertLetter);
+ checkWord$.pipe(takeUntil(userWinOrLoose$)).subscribe(checkWord);
+ removeLetter$.pipe(takeUntil(userWinOrLoose$)).subscribe(removeLetter);
  
